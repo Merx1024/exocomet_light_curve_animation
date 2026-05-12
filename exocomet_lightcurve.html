@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Exocomet Light Curve</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  width: 100%; height: 100vh;
+  background: #08090f;
+  color: #d0dce8;
+  font-family: 'Georgia', serif;
+  overflow: hidden;
+  user-select: none;
+}
+body {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 22px 12px;
+  gap: 10px;
+}
+
+#transit-wrap {
+  flex: 0 0 50%;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255,255,255,0.03);
+  border: 0.5px solid rgba(255,255,255,0.10);
+}
+#transit-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#bottom {
+  flex: 0 0 40%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#lc-wrap {
+  flex: 1 1 0;
+  min-height: 0;
+  background: rgba(255,255,255,0.03);
+  border: 0.5px solid rgba(255,255,255,0.10);
+  border-radius: 6px;
+  padding: 10px 12px 8px;
+  display: flex;
+  flex-direction: column;
+}
+#lc-label {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(208,220,232,1);
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+#lc-canvas {
+  display: block;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+}
+
+#legend {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  font-family: 'Courier New', monospace;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  color: rgba(208,220,232,0.40);
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+.li { display: flex; align-items: center; gap: 4px; }
+.ld { width: 16px; height: 2px; border-radius: 1px; flex-shrink: 0; }
+
+#controls {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: rgba(255,255,255,0.03);
+  border: 0.5px solid rgba(255,255,255,0.10);
+  border-radius: 6px;
+  padding: 8px 14px;
+}
+.ctrl {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  color: rgba(208,220,232,0.50);
+  white-space: nowrap;
+}
+.ctrl-val {
+  font-size: 10px;
+  font-weight: 700;
+  color: #d0dce8;
+  min-width: 42px;
+}
+input[type=range] {
+  -webkit-appearance: none;
+  width: 90px; height: 3px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: #7bb8e8;
+  cursor: pointer;
+}
+button {
+  font-family: 'Courier New', monospace;
+  font-size: 10px;
+  padding: 4px 13px;
+  border-radius: 4px;
+  border: 0.5px solid rgba(255,255,255,0.18);
+  background: rgba(255,255,255,0.07);
+  color: #d0dce8;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+}
+button:hover { background: rgba(255,255,255,0.12); }
+button.active { background: rgba(123,184,232,0.15); border-color: rgba(123,184,232,0.45); color: #7bb8e8; }
+</style>
+</head>
+<body>
+
+<div id="transit-wrap">
+  <canvas id="transit-canvas"></canvas>
+</div>
+
+<div id="bottom">
+  <div id="lc-wrap">
+    <div id="lc-label">Transit Light Curve</div>
+    <canvas id="lc-canvas"></canvas>
+    <div id="legend">
+      <span class="li"><span class="ld" style="background:#7bb8e8"></span>Observed flux</span>
+      <span class="li"><span class="ld" style="background:#e87b7b; width:2px; height:10px; border-radius:0"></span>Now</span>
+    </div>
+  </div>
+</div>
+
+<div id="controls">
+  <button id="pbtn" class="active">&#9646;&#9646; Pause</button>
+  <div class="ctrl">Speed
+    <input type="range" id="spd" min="-1" max="1" step="0.1" value="1">
+    <span class="ctrl-val" id="spdv">1.0×</span>
+  </div>
+  <div class="ctrl">Orbit
+    <input type="range" id="orb" min="0" max="1" step="0.0001" value="0">
+    <span class="ctrl-val" id="orbb">0.00</span>
+  </div>
+  <div class="ctrl">Dip depth
+    <input type="range" id="depth" min="0.01" max="0.20" step="0.005" value="0.055">
+    <span class="ctrl-val" id="depthv">5.5%</span>
+  </div>
+  <div class="ctrl">Asymmetry
+    <input type="range" id="asym" min="0" max="1" step="0.01" value="0.5">
+    <span class="ctrl-val" id="asymv">0.50</span>
+  </div>
+  <div class="ctrl">Dip width
+    <input type="range" id="width" min="0.04" max="0.30" step="0.01" value="0.12">
+    <span class="ctrl-val" id="widthv">0.12</span>
+  </div>
+  <button id="rbtn">&#8635; Reset</button>
+</div>
+
+<script>
+/* ────────────────────────────────────────────────
+   EDITABLE PARAMETERS
+   ──────────────────────────────────────────────── */
+var CFG = {
+  dipDepth:  0.055,   /* fractional flux dip. Real exocomets: 0.01–0.20 */
+  dipWidth:  0.12,    /* dip half-width in phase units (0–1) */
+
+  /*
+    asymmetry: 0 → symmetric exoplanet-like transit (flat bottom, equal ingress/egress)
+               1 → pure exocomet sawtooth (instant ingress, exponential egress tail)
+    At intermediate values the ingress is a logistic ramp that steepens then relaxes,
+    and the egress mirrors this but more slowly — both rounded, not split-Gaussian.
+    Physically: 0.5 ≈ typical exocomet (Lecavelier des Etangs 1999, Zieba 2019 style)
+  */
+  asymmetry: 0.50,
+
+  /* orbit display */
+  orbitRx:   0.34,    /* semi-major axis as fraction of canvas width/2 */
+  orbitRy:   0.26,    /* semi-minor axis as fraction of canvas height/2 */
+};
+/* ──────────────────────────────────────────────── */
+
+var t = 0;
+var speed = 1.0;
+var playing = true;
+var lcHistory = [];
+var LC_POINTS = 500;
+var userDraggingOrbit = false;
+var orbitTarget = 0;
+
+var transitCvs = document.getElementById('transit-canvas');
+var transitCtx = transitCvs.getContext('2d');
+var lcCvs      = document.getElementById('lc-canvas');
+var lcCtx      = lcCvs.getContext('2d');
+var orbitSlider = document.getElementById('orb');
+var orbitLabel  = document.getElementById('orbb');
+
+/* ── resize ──────────────────────────────────── */
+function resizeCanvases() {
+  var pr = window.devicePixelRatio || 1;
+
+  var tw = transitCvs.clientWidth;
+  var th = transitCvs.clientHeight;
+  transitCvs.width  = Math.round(tw * pr);
+  transitCvs.height = Math.round(th * pr);
+  transitCtx.setTransform(pr, 0, 0, pr, 0, 0);
+
+  var lw = lcCvs.clientWidth;
+  var lh = lcCvs.clientHeight || 160;
+  lcCvs.width  = Math.round(lw * pr);
+  lcCvs.height = Math.round(lh * pr);
+  lcCvs.style.width = lw + 'px';
+  lcCtx.setTransform(pr, 0, 0, pr, 0, 0);
+}
+window.addEventListener('resize', function() { setTimeout(resizeCanvases, 30); });
+setTimeout(resizeCanvases, 40);
+
+/* ── flux model ──────────────────────────────────────────────────────────────
+   Exocomet transit shape (Lecavelier des Etangs 1999, Zieba et al. 2019):
+
+     1. Sharp logistic DROP to full dip depth over ingress width w_in
+     2. Quick partial RECOVERY — rises back toward continuum with timescale t_fast,
+        but only recovers a fraction (1 - asym) of the depth
+     3. Slow exponential TAIL — the remaining fraction decays with timescale t_slow
+
+   This produces the characteristic shape: steep down, quick partial bounce,
+   then a long gradual return to 1. The asymmetry slider controls how much of the
+   recovery is fast vs slow (0 = symmetric exoplanet transit, 1 = pure slow tail).
+
+   Transit STARTS at phase 0.17 (first contact = ingress begins).
+*/
+function fluxModel(phase) {
+  var D    = CFG.dipDepth;
+  var wIn  = CFG.dipWidth;       /* ingress width in phase units */
+  var asym = CFG.asymmetry;      /* 0 = symmetric, 1 = maximum sawtooth */
+
+  /* Time since first contact (phase 0.17).
+     dp=0 at first contact, increases forward in time. */
+  var dp = ((phase - 0.17 + 1.0) % 1.0);
+
+  /* Total event window = 0.17 phase units (0.17→0.34).
+     Scale all egress timescales to fit within that window. */
+  var egressWindow = 0.17 - wIn;
+  var tFast = egressWindow * 0.35;
+  var tSlow = egressWindow * (0.35 + asym * 0.70);
+
+  /* How much depth the fast recovery covers (at asym=0, all of it = symmetric) */
+  var fastFraction = 1.0 - asym;               /* fraction recovered quickly */
+
+  var absorp;
+
+  if (dp > 0.17) {
+    /* Outside event window: flat continuum */
+    absorp = 0.0;
+
+  } else if (dp <= wIn) {
+    /* ── INGRESS: logistic drop, normalised to run 0→1 over [0, wIn] ──
+       At dp=0: absorp≈0 (continuum). At dp=wIn: absorp≈1 (full depth). */
+    var k   = 18.0 / wIn;
+    var raw = 1.0 / (1.0 + Math.exp(-k * (dp - wIn * 0.5)));
+    var lo  = 1.0 / (1.0 + Math.exp( k * wIn * 0.5));   /* value at dp=0 */
+    var hi  = 1.0 / (1.0 + Math.exp(-k * wIn * 0.5));   /* value at dp=wIn */
+    absorp  = (raw - lo) / (hi - lo + 1e-9);
+
+  } else {
+    /* ── EGRESS: two-component recovery ──
+       s = time since peak (end of ingress) */
+    var s = dp - wIn;
+
+    /* Fast component: recovers fastFraction of the depth quickly */
+    var fastRecovery  = fastFraction * (1.0 - Math.exp(-s / (tFast + 1e-9)));
+
+    /* Slow component: recovers the remaining asym fraction slowly */
+    var slowRecovery  = asym * (1.0 - Math.exp(-s / (tSlow + 1e-9)));
+
+    /* Total remaining absorption = 1 minus what has recovered */
+    absorp = 1.0 - fastRecovery - slowRecovery;
+    /* Smooth fade to continuum by end of event window (dp=0.17) */
+    var fade = Math.max(0.0, 1.0 - (s / egressWindow) * (s / egressWindow));
+    absorp = Math.max(0.0, absorp * fade);
+  }
+
+  return 1.0 - D * Math.max(0.0, Math.min(1.0, absorp));
+}
+
+/* ── comet orbit position (matches spectrum file) ───── */
+function cometOrbitPos() {
+  var W  = transitCvs.clientWidth;
+  var H  = transitCvs.clientHeight;
+  var cx = W * 0.5;
+  var cy = H * 0.52;
+  var rx = W * CFG.orbitRx;
+  var ry = H * CFG.orbitRy;
+  var ang = t * Math.PI * 2;
+  return {
+    x:  cx + rx * Math.cos(ang),
+    y:  cy + ry * Math.sin(ang),
+    z:  Math.sin(ang),
+    cx: cx,
+    cy: cy
+  };
+}
+
+/* ── draw transit system (star + comet identical to spectrum file) ── */
+function drawTransitSystem() {
+  var ctx = transitCtx;
+  var W   = transitCvs.clientWidth;
+  var H   = transitCvs.clientHeight;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#08090f';
+  ctx.fillRect(0, 0, W, H);
+
+  var pos   = cometOrbitPos();
+  var flux  = fluxModel(t);
+  var vis   = (1.0 - flux) / CFG.dipDepth;
+
+  /* Orbit guide */
+  ctx.beginPath();
+  ctx.ellipse(pos.cx, pos.cy, W * CFG.orbitRx, H * CFG.orbitRy, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth   = 1;
+  ctx.setLineDash([4, 6]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  /* ── Star: identical to spectrum file ── */
+  var starR = H * 0.30;
+
+  /* Outer corona */
+  var glow = ctx.createRadialGradient(pos.cx, pos.cy, starR * 0.05, pos.cx, pos.cy, starR * 4.2);
+  glow.addColorStop(0.00, 'rgba(255,252,235,0.14)');
+  glow.addColorStop(0.06, 'rgba(255,245,210,0.20)');
+  glow.addColorStop(0.16, 'rgba(255,228,160,0.16)');
+  glow.addColorStop(0.32, 'rgba(255,200,110,0.09)');
+  glow.addColorStop(0.55, 'rgba(255,160,70,0.035)');
+  glow.addColorStop(1.00, 'rgba(255,120,40,0.0)');
+  ctx.beginPath();
+  ctx.arc(pos.cx, pos.cy, starR * 4.2, 0, Math.PI * 2);
+  ctx.fillStyle = glow;
+  ctx.fill();
+
+  /* Main photosphere with limb darkening */
+  var photo = ctx.createRadialGradient(
+    pos.cx - starR * 0.18, pos.cy - starR * 0.20, starR * 0.08,
+    pos.cx, pos.cy, starR
+  );
+  photo.addColorStop(0.00, '#fffdf5');
+  photo.addColorStop(0.10, '#fff7dc');
+  photo.addColorStop(0.28, '#ffeeb8');
+  photo.addColorStop(0.50, '#ffd97a');
+  photo.addColorStop(0.72, '#f0b24d');
+  photo.addColorStop(0.90, '#b36a28');
+  photo.addColorStop(1.00, '#5a2f10');
+  ctx.beginPath();
+  ctx.arc(pos.cx, pos.cy, starR, 0, Math.PI * 2);
+  ctx.fillStyle = photo;
+  ctx.fill();
+
+  /* Chromospheric rim */
+  ctx.beginPath();
+  ctx.arc(pos.cx, pos.cy, starR * 1.01, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(210,230,255,0.22)';
+  ctx.lineWidth   = starR * 0.028;
+  ctx.stroke();
+
+  /* Inner core glow */
+  var core = ctx.createRadialGradient(
+    pos.cx - starR * 0.12, pos.cy - starR * 0.12, 0,
+    pos.cx, pos.cy, starR * 0.58
+  );
+  core.addColorStop(0.0,  'rgba(255,255,255,0.95)');
+  core.addColorStop(0.18, 'rgba(235,245,255,0.55)');
+  core.addColorStop(0.42, 'rgba(190,220,255,0.20)');
+  core.addColorStop(1.0,  'rgba(160,200,255,0.0)');
+  ctx.beginPath();
+  ctx.arc(pos.cx, pos.cy, starR * 0.58, 0, Math.PI * 2);
+  ctx.fillStyle = core;
+  ctx.fill();
+
+  /* ── Comet tails (identical geometry to spectrum file) ── */
+  var dx  = pos.x - pos.cx;
+  var dy  = pos.y - pos.cy;
+  var dl  = Math.sqrt(dx * dx + dy * dy) + 1e-9;
+  var rdx = dx / dl;
+  var rdy = dy / dl;
+
+  /* Ion tail */
+  var ionL    = W * 0.30;
+  var ionTipX = pos.x + rdx * ionL;
+  var ionTipY = pos.y + rdy * ionL;
+  var ionStartX = pos.x + rdx * 8;
+  var ionStartY = pos.y + rdy * 8;
+
+  var ionGrad = ctx.createLinearGradient(ionStartX, ionStartY, ionTipX, ionTipY);
+  ionGrad.addColorStop(0, 'rgba(140,210,255,0.55)');
+  ionGrad.addColorStop(1, 'rgba(140,210,255,0.00)');
+  ctx.beginPath();
+  ctx.moveTo(ionStartX, ionStartY);
+  ctx.lineTo(ionTipX, ionTipY);
+  ctx.strokeStyle = ionGrad;
+  ctx.lineWidth   = 6;
+  ctx.stroke();
+
+  /* Dust tail */
+  var dustL = W * 0.20;
+  var tx1   =  Math.sin(t * Math.PI * 2);
+  var ty1   = -Math.cos(t * Math.PI * 2);
+  var blend = 0.65;
+  var dirx  = tx1 * (1 - blend) + rdx * blend;
+  var diry  = ty1 * (1 - blend) + rdy * blend;
+  var dlen  = Math.sqrt(dirx * dirx + diry * diry) + 1e-9;
+  dirx /= dlen; diry /= dlen;
+
+  var cpX = pos.x + dirx * dustL * 0.5 + (-rdy * 25);
+  var cpY = pos.y + diry * dustL * 0.5 + ( rdx * 25);
+  var ex  = pos.x + dirx * dustL;
+  var ey  = pos.y + diry * dustL;
+
+  var dustGrad = ctx.createLinearGradient(pos.x, pos.y, ex, ey);
+  dustGrad.addColorStop(0.3, 'rgba(255,220,180,0.28)');
+  dustGrad.addColorStop(0.6, 'rgba(255,210,170,0.12)');
+  dustGrad.addColorStop(1.0, 'rgba(255,200,150,0.00)');
+  ctx.beginPath();
+  ctx.moveTo(pos.x, pos.y);
+  ctx.quadraticCurveTo(cpX, cpY, ex, ey);
+  ctx.strokeStyle = dustGrad;
+  ctx.lineWidth   = 14;
+  ctx.lineCap     = 'round';
+  ctx.stroke();
+
+  /* ── Coma: constant warm glow (identical to spectrum file) ── */
+  var comaR    = 50;
+  var comaGrad = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, comaR);
+  comaGrad.addColorStop(0,   'rgba(190,130,70,1)');
+  comaGrad.addColorStop(0.4, 'rgba(190,130,70,0.5)');
+  comaGrad.addColorStop(1,   'rgba(190,130,70,0.00)');
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, comaR, 0, Math.PI * 2);
+  ctx.fillStyle = comaGrad;
+  ctx.fill();
+
+  /* Nucleus */
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, 4, 0, Math.PI * 2);
+  ctx.fillStyle = vis > 0.05 ? '#ffffff' : '#9bbad0';
+  ctx.fill();
+}
+
+/* ── draw light curve ──────────────────────────── */
+function drawLC() {
+  var ctx = lcCtx;
+  var W   = lcCvs.clientWidth;
+  var H   = lcCvs.clientHeight || 160;
+  if (!H || H < 10) return;
+
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#08090f';
+  ctx.fillRect(0, 0, W, H);
+
+  var pl = 44, pr2 = 10, pt = 12, pb = 22;
+  var gw = W - pl - pr2;
+  var gh = H - pt - pb;
+  if (gw < 10 || gh < 10) return;
+
+  var yMin = 1.0 - CFG.dipDepth * 1.7;
+  var yMax = 1.003;
+
+  function yToCanvas(flux) {
+    return pt + gh * (1.0 - (flux - yMin) / (yMax - yMin));
+  }
+
+  /* Grid */
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth   = 0.5;
+  for (var i = 0; i <= 5; i++) {
+    var gy = pt + (i / 5) * gh;
+    ctx.beginPath(); ctx.moveTo(pl, gy); ctx.lineTo(pl + gw, gy); ctx.stroke();
+  }
+  for (var j = 0; j <= 4; j++) {
+    var gx = pl + (j / 4) * gw;
+    ctx.beginPath(); ctx.moveTo(gx, pt); ctx.lineTo(gx, pt + gh); ctx.stroke();
+  }
+
+  /* Axis box */
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+  ctx.lineWidth   = 0.5;
+  ctx.strokeRect(pl, pt, gw, gh);
+
+  /* Y-axis labels */
+  ctx.fillStyle = 'rgba(208,220,232,1)';
+  ctx.font      = '9px Courier New';
+  ctx.textAlign = 'right';
+  for (var k = 0; k <= 5; k++) {
+    var fv = yMax - k * (yMax - yMin) / 5;
+    ctx.fillText(fv.toFixed(3), pl - 5, pt + k * gh / 5 + 3);
+  }
+
+  ctx.textAlign = 'center';
+  ctx.fillText('Time', pl + gw / 2, H - 4);
+  ctx.save();
+  ctx.translate(11, H / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.textAlign = 'center';
+  ctx.fillText('Normalised flux', 0, 0);
+  ctx.restore();
+
+  /* Flux=1 reference */
+  ctx.beginPath(); ctx.moveTo(pl, yToCanvas(1.0)); ctx.lineTo(pl + gw, yToCanvas(1.0));
+  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.lineWidth   = 0.5;
+  ctx.setLineDash([5, 6]); ctx.stroke(); ctx.setLineDash([]);
+
+  /* Observed trace */
+  if (lcHistory.length > 1) {
+    ctx.beginPath();
+    for (var n = 0; n < lcHistory.length; n++) {
+      var hx = pl + (n / LC_POINTS) * gw;
+      var hy = yToCanvas(lcHistory[n]);
+      if (n === 0) ctx.moveTo(hx, hy); else ctx.lineTo(hx, hy);
+    }
+    ctx.strokeStyle = '#7bb8e8';
+    ctx.lineWidth   = 1.8;
+    ctx.stroke();
+    ctx.lineTo(pl + ((lcHistory.length - 1) / LC_POINTS) * gw, pt + gh);
+    ctx.lineTo(pl, pt + gh); ctx.closePath();
+    ctx.fillStyle = 'rgba(123,184,232,0.10)';
+    ctx.fill();
+  }
+
+  /* Now marker */
+  if (lcHistory.length > 0) {
+    var nowX = pl + ((lcHistory.length - 1) / LC_POINTS) * gw;
+    var nowY = yToCanvas(lcHistory[lcHistory.length - 1]);
+    ctx.beginPath(); ctx.moveTo(nowX, pt); ctx.lineTo(nowX, pt + gh);
+    ctx.strokeStyle = 'rgba(232,123,123,0.55)';
+    ctx.lineWidth   = 1.0;
+    ctx.setLineDash([3, 5]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(nowX, nowY, 4, 0, Math.PI * 2);
+    ctx.fillStyle = '#e87b7b'; ctx.fill();
+  }
+
+  /* Status */
+  var flux     = fluxModel(t);
+  var dip      = (1.0 - flux) / CFG.dipDepth;
+  var statusText  = dip > 0.05 ? 'Exocomet Transit' : 'Quiescent';
+  var statusColor = dip > 0.05
+    ? 'rgba(232,168,123,' + (0.5 + 0.5 * dip) + ')'
+    : 'rgba(208,220,232,0.6)';
+  ctx.fillStyle  = statusColor;
+  ctx.font       = '15px Courier New';
+  ctx.textAlign  = 'left';
+  ctx.fillText(statusText, pl + 4, pt + 20);
+}
+
+/* ── animation loop ──────────────────────────── */
+var lastTs = null;
+function frame(ts) {
+  if (!lastTs) lastTs = ts;
+  var dt = Math.min((ts - lastTs) / 1000.0, 0.05);
+  lastTs = ts;
+
+  if (playing && !userDraggingOrbit) {
+    t = (t + dt * speed * 0.055) % 1.0;
+  } else if (userDraggingOrbit) {
+    t += (orbitTarget - t) * 0.25;
+  }
+
+  if (playing && !userDraggingOrbit) {
+    lcHistory.push(fluxModel(t));
+    if (lcHistory.length > LC_POINTS) lcHistory.shift();
+  }
+
+  orbitSlider.value      = t;
+  orbitLabel.textContent = t.toFixed(2);
+
+  drawTransitSystem();
+  drawLC();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+/* ── controls ────────────────────────────────── */
+document.getElementById('pbtn').addEventListener('click', function() {
+  playing = !playing;
+  this.innerHTML = playing ? '&#9646;&#9646; Pause' : '&#9654; Play';
+  this.classList.toggle('active', playing);
+  if (playing) lastTs = null;
+});
+
+document.getElementById('spd').addEventListener('input', function() {
+  speed = parseFloat(this.value);
+  document.getElementById('spdv').textContent = speed.toFixed(1) + '×';
+});
+
+document.getElementById('depth').addEventListener('input', function() {
+  CFG.dipDepth = parseFloat(this.value);
+  document.getElementById('depthv').textContent = (CFG.dipDepth * 100).toFixed(1) + '%';
+  lcHistory.length = 0;
+});
+
+document.getElementById('asym').addEventListener('input', function() {
+  CFG.asymmetry = parseFloat(this.value);
+  document.getElementById('asymv').textContent = CFG.asymmetry.toFixed(2);
+  lcHistory.length = 0;
+});
+
+document.getElementById('width').addEventListener('input', function() {
+  CFG.dipWidth = parseFloat(this.value);
+  document.getElementById('widthv').textContent = CFG.dipWidth.toFixed(2);
+  lcHistory.length = 0;
+});
+
+document.getElementById('rbtn').addEventListener('click', function() {
+  t = 0; lcHistory.length = 0; lastTs = null;
+});
+
+orbitSlider.addEventListener('pointerdown', function() { userDraggingOrbit = true; playing = false; });
+orbitSlider.addEventListener('pointerup',    function() { userDraggingOrbit = false; });
+orbitSlider.addEventListener('pointerleave', function() { userDraggingOrbit = false; });
+orbitSlider.addEventListener('input', function(e) {
+  orbitTarget = Number(e.target.value);
+  userDraggingOrbit = true;
+  playing = false;
+});
+</script>
+</body>
+</html>
